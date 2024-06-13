@@ -1,0 +1,152 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: geofeed-config
+  namespace: geofeed
+data:
+  default.conf: |
+    server {
+      listen  [::]:443 ssl;
+      server_name  geofeed.nextheader.dev;
+
+      ssl_certificate /etc/ssl/nginx/tls.crt;
+      ssl_certificate_key /etc/ssl/nginx/tls.key;
+
+      #access_log  /var/log/nginx/host.access.log  main;
+
+      location / {
+          root   /usr/share/nginx/html;
+          index  index.html index.htm;
+      }
+
+      #error_page  404              /404.html;
+
+      # redirect server error pages to the static page /50x.html
+      #
+      error_page   500 502 503 504  /50x.html;
+      location = /50x.html {
+          root   /usr/share/nginx/html;
+      }
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: geofeed-html
+  namespace: geofeed
+data:
+  index.html: |
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <title>Geofeed</title>
+    </head>
+    <body>
+    <pre>
+    2a06:de00:50::/44,NL,NL-NH,Amsterdam
+    2a0e:97c0:8a0::/44,NL,NL-NH,Amsterdam
+    </pre>
+    </body>
+    </html>  
+  50x.html: |
+    <html>
+    <head>
+    <title>Error</title>
+    </head>
+    <body>
+    <h1>An error occurred.</h1>
+    </body>
+    </html>
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: acme-cert
+  namespace: geofeed
+spec:
+  secretName: acme-cert
+  dnsNames:
+    - geofeed.nextheader.dev
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: nextheader-acme
+    kind: ClusterIssuer
+    group: cert-manager.io
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: geofeed
+  namespace: geofeed
+spec:
+  selector:
+    matchLabels:
+      run: geofeed
+  replicas: 2
+  template:
+    metadata:
+      labels:
+        run: geofeed
+    spec:
+      containers:
+      - name: geofeed
+        image: nginx
+        ports:
+        - containerPort: 443
+        volumeMounts:
+        - name: geofeed-config
+          mountPath: /etc/nginx/conf.d
+        - name: geofeed-cert
+          readOnly: true
+          mountPath: /etc/ssl/nginx/
+        - name: geofeed-html
+          mountPath: /usr/share/nginx/html
+      volumes:
+      - name: geofeed-config
+        configMap:
+          name: geofeed-config
+      - name: geofeed-cert
+        secret:
+          secretName: acme-cert
+      - name: geofeed-html
+        configMap:
+          name: geofeed-html
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: geofeed
+  namespace: geofeed
+  labels:
+    run: geofeed
+  annotations:
+    external-dns.alpha.kubernetes.io/hostname: geofeed.nextheader.dev
+    external-dns.alpha.kubernetes.io/ttl: "120"
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 443
+    protocol: TCP
+  selector:
+    run: geofeed
+---
+apiVersion: projectcalico.org/v3
+kind: NetworkPolicy
+metadata:
+  name: geofeed-policy
+  namespace: geofeed
+spec:
+  selector: run == 'geofeed'
+  types:
+  - Ingress
+  - Egress
+  ingress:
+  - action: Allow
+    protocol: TCP
+    destination:
+      ports:
+        - 443
+  egress:
+  - action: Allow
