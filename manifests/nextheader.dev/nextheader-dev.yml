@@ -1,0 +1,117 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nextheader-dev-config
+  namespace: nextheader-dev
+data:
+  default.conf: |
+    server {
+      listen  [::]:443 ssl;
+      server_name nextheader.dev;
+
+      ssl_certificate /etc/ssl/nginx/tls.crt;
+      ssl_certificate_key /etc/ssl/nginx/tls.key;
+
+      #access_log  /var/log/nginx/host.access.log  main;
+
+      location / {
+          root   /usr/share/nginx/html;
+      }
+
+      #error_page  404              /404.html;
+
+      # redirect server error pages to the static page /50x.html
+      #
+      error_page   500 502 503 504  /50x.html;
+      location = /50x.html {
+          root   /usr/share/nginx/html;
+      }
+    }
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: acme-cert
+  namespace: nextheader-dev
+spec:
+  secretName: acme-cert
+  dnsNames:
+    - nextheader.dev
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: nextheader-acme
+    kind: ClusterIssuer
+    group: cert-manager.io
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nextheader-dev
+  namespace: nextheader-dev
+spec:
+  selector:
+    matchLabels:
+      run: nextheader-dev
+  replicas: 2
+  template:
+    metadata:
+      labels:
+        run: nextheader-dev
+    spec:
+      containers:
+      - name: nextheader-dev
+        image: ghcr.io/nxthdr/nextheader.dev:main
+        ports:
+        - containerPort: 443
+        volumeMounts:
+        - name: nextheader-dev-config
+          mountPath: /etc/nginx/conf.d
+        - name: nextheader-dev-cert
+          readOnly: true
+          mountPath: /etc/ssl/nginx/
+      volumes:
+      - name: nextheader-dev-config
+        configMap:
+          name: nextheader-dev-config
+      - name: nextheader-dev-cert
+        secret:
+          secretName: acme-cert
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nextheader-dev
+  namespace: nextheader-dev
+  labels:
+    run: nextheader-dev
+  annotations:
+    external-dns.alpha.kubernetes.io/hostname: nextheader.dev
+    external-dns.alpha.kubernetes.io/ttl: "120"
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 443
+    protocol: TCP
+  selector:
+    run: nextheader-dev
+---
+apiVersion: projectcalico.org/v3
+kind: NetworkPolicy
+metadata:
+  name: nextheader-dev-policy
+  namespace: nextheader-dev
+spec:
+  selector: run == 'nextheader-dev'
+  types:
+  - Ingress
+  - Egress
+  ingress:
+  - action: Allow
+    protocol: TCP
+    destination:
+      ports:
+        - 443
+  egress:
+  - action: Allow
