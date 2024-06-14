@@ -16,6 +16,7 @@ data:
 
       location / {
           root   /usr/share/nginx/html;
+          index  index.html index.htm;
       }
 
       #error_page  404              /404.html;
@@ -63,6 +64,7 @@ spec:
       containers:
       - name: nextheader-dev
         image: ghcr.io/nxthdr/nextheader.dev:main
+        imagePullPolicy: Always
         ports:
         - containerPort: 443
         volumeMounts:
