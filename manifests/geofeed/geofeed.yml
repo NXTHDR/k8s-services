@@ -119,18 +119,16 @@ kind: Service
 metadata:
   name: geofeed
   namespace: geofeed
-  labels:
-    run: geofeed
   annotations:
     external-dns.alpha.kubernetes.io/hostname: geofeed.nextheader.dev
     external-dns.alpha.kubernetes.io/ttl: "120"
 spec:
+  selector:
+    run: geofeed
   type: LoadBalancer
   ports:
   - port: 443
     protocol: TCP
-  selector:
-    run: geofeed
 ---
 apiVersion: projectcalico.org/v3
 kind: NetworkPolicy
